@@ -20,6 +20,8 @@ export interface DeploymentConfig {
   mysqlUser: string;
   mysqlPassword: string;
   mysqlRootPassword: string;
+  mysqlHost?: string;
+  mysqlPort?: string;
   domainName?: string;
   githubToken?: string;
 }

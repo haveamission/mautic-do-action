@@ -1,65 +1,65 @@
-name: 'Deploy Mautic to DigitalOcean'
-description: 'Deploy Mautic 6 with Docker Compose to a DigitalOcean VPS with automated SSL and monitoring'
-author: 'escopecz'
+name: "Deploy Mautic to DigitalOcean"
+description: "Deploy Mautic 6 with Docker Compose to a DigitalOcean VPS with automated SSL and monitoring"
+author: "escopecz"
 
 branding:
-  icon: 'cloud'
-  color: 'blue'
+  icon: "cloud"
+  color: "blue"
 
 inputs:
   # DigitalOcean Configuration
   digitalocean-token:
-    description: 'DigitalOcean API access token'
+    description: "DigitalOcean API access token"
     required: true
   ssh-private-key:
-    description: 'SSH private key for VPS access'
+    description: "SSH private key for VPS access"
     required: true
-  
+
   # Mautic Configuration
   email:
-    description: 'Admin email address for Mautic and SSL certificates'
+    description: "Admin email address for Mautic and SSL certificates"
     required: true
   mautic-password:
-    description: 'Admin password for Mautic'
+    description: "Admin password for Mautic"
     required: true
   mautic-version:
-    description: 'Mautic Docker image version'
+    description: "Mautic Docker image version"
     required: false
-    default: '6.0.7-apache'
+    default: "6.0.7-apache"
   mautic-port:
-    description: 'Port for Mautic instance'
+    description: "Port for Mautic instance"
     required: false
-    default: '8001'
-  
+    default: "8001"
+
   # Optional Configuration
   domain:
-    description: 'Domain name for your Mautic instance (optional, will use IP if not provided)'
+    description: "Domain name for your Mautic instance (optional, will use IP if not provided)"
     required: false
   vps-name:
-    description: 'Name for the DigitalOcean droplet'
+    description: "Name for the DigitalOcean droplet"
     required: false
-    default: 'mautic-vps'
+    default: "mautic-vps"
   vps-size:
-    description: 'DigitalOcean droplet size - Minimum s-1vcpu-2gb recommended for MySQL 8.0 + Mautic (s-1vcpu-2gb, s-2vcpu-2gb, s-2vcpu-4gb, s-4vcpu-8gb)'
+    description: "DigitalOcean droplet size - Minimum s-1vcpu-2gb recommended for MySQL 8.0 + Mautic (s-1vcpu-2gb, s-2vcpu-2gb, s-2vcpu-4gb, s-4vcpu-8gb)"
     required: false
-    default: 's-1vcpu-2gb'
+    default: "s-1vcpu-2gb"
   vps-region:
-    description: 'DigitalOcean region'
+    description: "DigitalOcean region"
     required: false
-    default: 'nyc1'
-  
+    default: "nyc1"
+
   # Mautic Packages
   themes:
     description: |
       List of Mautic theme packages from Packagist or GitHub (one per line).
-      
+
       Packagist packages:
       vendor/theme-name:^1.0
       another-vendor/custom-theme:dev-main
-      
+
       GitHub URLs (public repositories):
       https://github.com/user/theme-repo/archive/refs/heads/main.zip
-      
+
       GitHub URLs with custom directory and authentication:
       https://github.com/company/private-theme/archive/main.zip?directory=MyCustomTheme&token=ghp_xxxxxxxxxxxxxxxxxxxx
       https://github.com/vendor/premium-theme/archive/v2.1.0.zip?directory=PremiumTheme&token=ghp_yyyyyyyyyyyyyyyyyyyy
@@ -67,82 +67,89 @@ inputs:
   plugins:
     description: |
       List of Mautic plugin packages from Packagist or GitHub (one per line).
-      
+
       Packagist packages:
       vendor/plugin-name:^2.0
       another-vendor/custom-plugin:^1.5
-      
+
       GitHub URLs (public repositories):
       https://github.com/user/plugin-repo/archive/refs/heads/main.zip
-      
+
       GitHub URLs with custom directory and authentication:
       https://github.com/company/private-plugin/archive/main.zip?directory=CompanyPlugin&token=ghp_xxxxxxxxxxxxxxxxxxxx
       https://github.com/vendor/premium-plugin/archive/v2.1.0.zip?directory=PremiumPlugin&token=ghp_yyyyyyyyyyyyyyyyyyyy
     required: false
-  
+
   # Database Configuration
+  mysql-host:
+    description: "External MySQL host. When set, skips deploying the local MySQL container."
+    required: false
+  mysql-port:
+    description: "MySQL port"
+    required: false
+    default: "3306"
   mysql-database:
-    description: 'MySQL database name'
+    description: "MySQL database name"
     required: false
-    default: 'mautic_db'
+    default: "mautic_db"
   mysql-user:
-    description: 'MySQL user name'
+    description: "MySQL user name"
     required: false
-    default: 'mautic_db_user'
+    default: "mautic_db_user"
   mysql-password:
-    description: 'MySQL password'
+    description: "MySQL password"
     required: false
-    default: 'mautic_db_pwd'
+    default: "mautic_db_pwd"
   mysql-root-password:
-    description: 'MySQL root password'
+    description: "MySQL root password"
     required: false
-    default: 'changeme'
+    default: "changeme"
 
 outputs:
   vps-ip:
-    description: 'IP address of the created VPS'
+    description: "IP address of the created VPS"
     value: ${{ steps.deploy.outputs.vps-ip }}
   mautic-url:
-    description: 'URL to access your Mautic instance'
+    description: "URL to access your Mautic instance"
     value: ${{ steps.deploy.outputs.mautic-url }}
   deployment-log:
-    description: 'Path to the deployment log artifact'
+    description: "Path to the deployment log artifact"
     value: ${{ steps.deploy.outputs.deployment-log }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Validate inputs
       shell: bash
       run: |
         echo "🔍 Validating required inputs..."
-        
+
         if [ -z "${{ inputs.digitalocean-token }}" ]; then
           echo "❌ Error: digitalocean-token is required"
           exit 1
         fi
-        
+
         if [ -z "${{ inputs.ssh-private-key }}" ]; then
           echo "❌ Error: ssh-private-key is required"
           exit 1
         fi
-        
+
         if [ -z "${{ inputs.email }}" ]; then
           echo "❌ Error: email is required"
           exit 1
         fi
-        
+
         if [ -z "${{ inputs.mautic-password }}" ]; then
           echo "❌ Error: mautic-password is required"
           exit 1
         fi
-        
+
         # Validate email format
         if ! echo "${{ inputs.email }}" | grep -E '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' > /dev/null; then
           echo "❌ Error: Invalid email format"
           exit 1
         fi
-        
+
         echo "✅ All required inputs validated"
 
     - name: Install doctl
@@ -159,17 +166,17 @@ runs:
         echo "  INPUT_MAUTIC_VERSION='${INPUT_MAUTIC_VERSION}'"
         echo "  mautic-version input='${{ inputs.mautic-version }}'"
         echo ""
-        
+
         # Run the main deployment script
         ${{ github.action_path }}/scripts/deploy.sh
-        
+
         # Fail-fast validation: Check if deployment outputs were created
         echo ""
         echo "🔍 Validating deployment..."
-        
+
         # Extract VPS IP from deployment outputs immediately
         VPS_IP=$(grep "vps-ip=" "$GITHUB_OUTPUT" | cut -d'=' -f2-)
-        
+
         # Fail fast if no VPS IP found
         if [ -z "$VPS_IP" ] && [ -z "$INPUT_DOMAIN" ]; then
             echo "❌ FATAL: VPS IP not found in deployment outputs"
@@ -178,7 +185,7 @@ runs:
             cat "$GITHUB_OUTPUT" 2>/dev/null || echo "No GitHub outputs file found"
             exit 1
         fi
-        
+
         # Set the URL based on domain or IP
         if [ -n "$INPUT_DOMAIN" ]; then
             MAUTIC_URL="https://${INPUT_DOMAIN}"
@@ -190,19 +197,19 @@ runs:
             echo "VPS IP: ${VPS_IP}"
             echo "Mautic URL: ${MAUTIC_URL}"
         fi
-        
+
         # Fail fast if URL construction failed
         if [ -z "$MAUTIC_URL" ]; then
             echo "❌ FATAL: Could not construct Mautic URL"
             exit 1
         fi
-        
+
         echo "⏳ Waiting for Mautic to be ready..."
-        
+
         # Enhanced validation with better timeout and debugging
         MAX_ATTEMPTS=8
         ATTEMPT=1
-        
+
         while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT: Testing Mautic login page..."
             
@@ -332,6 +339,8 @@ runs:
         INPUT_MYSQL_USER: ${{ inputs.mysql-user }}
         INPUT_MYSQL_PASSWORD: ${{ inputs.mysql-password }}
         INPUT_MYSQL_ROOT_PASSWORD: ${{ inputs.mysql-root-password }}
+        INPUT_MYSQL_HOST: ${{ inputs.mysql-host }}
+        INPUT_MYSQL_PORT: ${{ inputs.mysql-port }}
         ACTION_PATH: ${{ github.action_path }}
 
     - name: Generate unique artifact ID
@@ -339,7 +348,7 @@ runs:
       id: artifact-id
       if: always()
       run: echo "id=$(date +%s)-$$-$RANDOM" >> $GITHUB_OUTPUT
-      
+
     - name: Upload deployment log
       uses: actions/upload-artifact@v4
       if: always()
