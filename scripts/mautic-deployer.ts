@@ -778,6 +778,22 @@ PORT=${this.config.port}
     }
 
     Logger.log("=== COMPLETED RUNTIME INSTALLATION ===", "✅");
+
+    // Restart Apache to clear opcache so the compiled container picks up new bundles
+    Logger.log("Restarting Apache to clear opcache...", "🔄");
+    const apacheResult = await ProcessManager.runShell(
+      `docker exec mautic_web apache2ctl graceful`,
+      { ignoreError: true },
+    );
+    if (apacheResult.success) {
+      Logger.log("✅ Apache restarted successfully", "✅");
+    } else {
+      Logger.log(
+        `⚠️ Warning: Apache restart failed: ${apacheResult.output}`,
+        "⚠️",
+      );
+    }
+
     Logger.success("Runtime installation of themes and plugins completed");
   }
 
@@ -1346,6 +1362,11 @@ echo "=== EXTRACTION PROCESS COMPLETE ==="`;
           Logger.log(consoleResult.output, "📄");
         }
 
+        // Install composer dependencies from plugin's composer.json
+        if (directory) {
+          await this.installPluginComposerDependencies(directory);
+        }
+
         // Clear cache after plugin installation
         Logger.log(`🧹 Clearing cache after plugin installation...`, "🧹");
         const cacheResult = await ProcessManager.runShell(
@@ -1370,6 +1391,121 @@ echo "=== EXTRACTION PROCESS COMPLETE ==="`;
         error instanceof Error ? error.message : "Unknown error";
       Logger.error(`❌ Failed to install plugin ${pluginUrl}: ${errorMessage}`);
       // Re-throw the error to fail the build as requested
+      throw error;
+    }
+  }
+
+  /**
+   * Install composer dependencies from a plugin's composer.json
+   * Reads the plugin's require block and installs any third-party packages
+   * that aren't already part of Mautic core.
+   */
+  private async installPluginComposerDependencies(
+    directory: string,
+  ): Promise<void> {
+    Logger.log(
+      `📦 Checking composer dependencies for plugin ${directory}...`,
+      "📦",
+    );
+
+    try {
+      const composerJsonResult = await ProcessManager.runShell(
+        `docker exec mautic_web bash -c 'cat /var/www/html/docroot/plugins/${directory}/composer.json 2>/dev/null'`,
+        { ignoreError: true },
+      );
+
+      if (!composerJsonResult.success || !composerJsonResult.output.trim()) {
+        Logger.log(
+          `ℹ️ No composer.json found for plugin ${directory}, skipping dependency installation`,
+          "ℹ️",
+        );
+        return;
+      }
+
+      let composerJson;
+      try {
+        composerJson = JSON.parse(composerJsonResult.output);
+      } catch {
+        Logger.log(
+          `⚠️ Failed to parse composer.json for plugin ${directory}, skipping dependency installation`,
+          "⚠️",
+        );
+        return;
+      }
+
+      const dependencies = composerJson.require || {};
+      const packages: string[] = [];
+
+      for (const [pkg, version] of Object.entries(dependencies) as [
+        string,
+        string,
+      ][]) {
+        // Skip packages that are part of Mautic core, PHP itself, or PHP extensions
+        if (
+          pkg === "php" ||
+          pkg.startsWith("ext-") ||
+          pkg.startsWith("mautic/") ||
+          pkg.startsWith("symfony/") ||
+          pkg.startsWith("doctrine/")
+        ) {
+          Logger.log(`  Skipping core/platform dependency: ${pkg}`, "⏭️");
+          continue;
+        }
+
+        // Check if this package is already installed
+        const checkInstalled = await ProcessManager.runShell(
+          `docker exec mautic_web bash -c 'cd /var/www/html && composer show ${pkg} 2>/dev/null'`,
+          { ignoreError: true },
+        );
+
+        if (checkInstalled.success) {
+          Logger.log(`  ✅ ${pkg} already installed, skipping`, "✅");
+          continue;
+        }
+
+        packages.push(`${pkg}:${version}`);
+      }
+
+      if (packages.length === 0) {
+        Logger.log(
+          `ℹ️ No additional composer dependencies needed for plugin ${directory}`,
+          "ℹ️",
+        );
+        return;
+      }
+
+      Logger.log(
+        `📦 Installing ${packages.length} composer dependencies: ${packages.join(", ")}`,
+        "📦",
+      );
+
+      const requireCommand = `docker exec mautic_web bash -c 'cd /var/www/html && composer require ${packages.join(" ")} --no-interaction --no-scripts 2>&1'`;
+
+      const requireResult = await ProcessManager.runShell(requireCommand, {
+        ignoreError: true,
+      });
+
+      if (requireResult.success) {
+        Logger.log(
+          `✅ Composer dependencies installed successfully for plugin ${directory}`,
+          "✅",
+        );
+        Logger.log(requireResult.output, "📄");
+      } else {
+        Logger.log(
+          `❌ Failed to install composer dependencies for plugin ${directory}: ${requireResult.output}`,
+          "❌",
+        );
+        throw new Error(
+          `Composer dependency installation failed for plugin ${directory}: ${requireResult.output}`,
+        );
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      Logger.error(
+        `❌ Composer dependency installation failed for ${directory}: ${errorMessage}`,
+      );
       throw error;
     }
   }
